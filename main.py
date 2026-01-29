@@ -22,18 +22,17 @@ MORNING_PERSON_CUTOFF = (7, 44)   # Anyone before this is a morning person
 # ---------------------------------------- #
 
 # --- Google Sheets Setup ---
-# Uses a service account credential JSON file named "credentials.json"
 scope = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive"
 ]
 
-json_creds = os.getenv("GOOGLE_CREDENTIALS_JSON")
-if not json_creds:
-    raise ValueError("GOOGLE_CREDENTIALS_JSON not set")
+# Path to secret file mounted by Render
+cred_path = "/run/secrets/google_credentials.json"
 
-creds_dict = json.loads(json_creds)
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+# Load credentials from file
+creds = ServiceAccountCredentials.from_json_keyfile_name(cred_path, scope)
+
 client = gspread.authorize(creds)
 sheet = client.open("DTR HAWKS").sheet1
 # --------------------------------

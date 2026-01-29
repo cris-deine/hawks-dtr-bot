@@ -52,4 +52,4 @@ dmypy.json
 .env
 .env.*
 
-credentials.json
+google_credentials.json
