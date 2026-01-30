@@ -69,7 +69,7 @@ else:
     ADMIN_IDS = []
     with open(ADMINS_FILE, "w") as f:
         json.dump({"admin_ids": []}, f, indent=4)
-    print("⚠️  WARNING: No admins configured! Please add admin IDs to admins.json")
+    print("WARNING: No admins configured! Please add admin IDs to admins.json")
 # ----------------------------------------
 
 # ---------------- HELPERS ---------------- #
@@ -407,20 +407,20 @@ async def on_command_error(ctx, error):
         command = ctx.command.name if ctx.command else "command"
         
         if command == "add_user":
-            await ctx.send("❌ **Usage:** `!add_user @username Full Name`\n\nExample: `!add_user @john Juan Dela Cruz`")
+            await ctx.send("**Usage:** `!add_user @username Full Name`\n\nExample: `!add_user @john Juan Dela Cruz`")
         elif command == "change_name":
-            await ctx.send("❌ **Usage:** `!change_name @username New Full Name`\n\nExample: `!change_name @john Juan Miguel Cruz`")
+            await ctx.send("**Usage:** `!change_name @username New Full Name`\n\nExample: `!change_name @john Juan Miguel Cruz`")
         elif command == "remove_user":
-            await ctx.send("❌ **Usage:** `!remove_user @username`\n\nExample: `!remove_user @john`")
+            await ctx.send("**Usage:** `!remove_user @username`\n\nExample: `!remove_user @john`")
         else:
-            await ctx.send(f"❌ Oops! This command needs more information.\n\nTry `!help_dtr` to see how to use it.")
+            await ctx.send(f"Oops! This command needs more information.\n\nTry `!help_dtr` to see how to use it.")
     
     elif isinstance(error, commands.CommandNotFound):
         # ignore unknown commands silently
         pass
     
     else:
-        await ctx.send(f"❌ Something went wrong. Please try again or contact an admin.")
+        await ctx.send(f"Something went wrong. Please try again or contact an admin.")
         print(f"Error: {error}")
 
 # ---------------- COMMANDS ---------------- #
@@ -512,7 +512,7 @@ async def list_users(ctx):
         formatted_name = format_name_with_initials(name)
         # Check if this user is an admin (but don't show their ID)
         if int(uid) in ADMIN_IDS:
-            user_list.append(f"• {formatted_name} ADMIN")
+            user_list.append(f"• {formatted_name} - ADMIN")
         else:
             user_list.append(f"• {formatted_name}")
     
@@ -523,7 +523,7 @@ async def list_users(ctx):
     
     await ctx.send(
         f"**Authorized Users ({len(user_names)}):**\n"
-        f"👑 Admins: {admin_count} | Regular Users: {len(user_names) - admin_count}\n\n"
+        f"Admins: {admin_count} | Regular Users: {len(user_names) - admin_count}\n\n"
         f"{users_display}"
     )
 
