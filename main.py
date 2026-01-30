@@ -21,7 +21,7 @@ TIMEZONE = pytz.timezone("Asia/Manila")
 AM_IN_CUTOFF = (10, 0)            # 10:00 AM - late threshold (hour, minute)
 REQUIRED_HOURS = 8                # Required work hours per day
 ADMIN_IDS = [1429858548392792288, 896989800786190337, 830704365438369792] # Add Discord user IDs of admins here (ints)
-MORNING_PERSON_CUTOFF = (7, 40)   # Anyone before this is a morning person
+MORNING_PERSON_CUTOFF = (7, 44)   # Anyone before this is a morning person
 # ---------------------------------------- #
 
 # --- Google Sheets Setup ---
@@ -44,15 +44,24 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 # --------------------------------
 
-# ---------------- STORAGE ---------------- #
+# ---------------- USERS STORAGE ---------------- #
+# Pre-loaded users - no registration needed!
+# Format: {"discord_id": "Full Name"}
 USERS_FILE = "users.json"
 
 if os.path.exists(USERS_FILE):
     with open(USERS_FILE, "r") as f:
         user_names = json.load(f)
 else:
-    user_names = {}
-# No temporary in-memory DTR storage — everything is appended to Google Sheets.
+    # Default users - REPLACE WITH YOUR ACTUAL MEMBER IDS AND NAMES
+    user_names = {
+        "1429858548392792288": "Juan Dela Cruz",
+        "896989800786190337": "Maria Santos",
+        "830704365438369792": "Pedro Garcia"
+    }
+    # Save the default
+    with open(USERS_FILE, "w") as f:
+        json.dump(user_names, f, indent=4)
 # ----------------------------------------
 
 # ---------------- HELPERS ---------------- #
@@ -72,10 +81,7 @@ def pretty_date():
 
 def timestamp_str():
     """Full timestamp used for the sheet Timestamp column:
-       Format: M/D/YYYY H:MM:SS  (no padded month/day)"""
-    """n = now()
-    return f"{n.month}/{n.day}/{n.year} {n.hour}:{n.minute:02d}:{n.second:02d}"""
-
+       Format: M/D/YYYY H:MM:SS AM/PM"""
     n = now()
     hour_12 = n.hour % 12
     if hour_12 == 0:
@@ -133,9 +139,12 @@ def format_name_with_initials(full_name):
         return f"{first_name} {middle_initial}. {last_name}"
 
 def get_user_name(ctx):
-    """Return the formatted name registered for the Discord user, or None."""
+    """Return the formatted name for the Discord user, or None if not authorized."""
     uid = str(ctx.author.id)
-    return user_names.get(uid, None)
+    raw_name = user_names.get(uid, None)
+    if raw_name:
+        return format_name_with_initials(raw_name)
+    return None
 
 def is_late():
     """Return True if current time is at-or-after AM_IN_CUTOFF."""
@@ -322,20 +331,6 @@ def is_admin(user_id):
     """Check if a numeric Discord user_id is in ADMIN_IDS."""
     return user_id in ADMIN_IDS
 
-# --- Name validation ---
-def validate_name(name):
-    """Simple checks for name validity."""
-    if not name or len(name.strip()) < 3:
-        return False, "Name must be at least 3 characters long."
-    if len(name) > 100:
-        return False, "Name is too long (max 100 characters)."
-    if not all(c.isalpha() or c.isspace() or c in ".-'" for c in name):
-        return False, "Name can only contain letters, spaces, hyphens, apostrophes, and periods."
-    parts = name.strip().split()
-    if len(parts) < 2:
-        return False, "Please provide at least a first name and last name."
-    return True, None
-
 # --- Discord message formatter ---
 def format_record_message(name, record):
     """
@@ -413,32 +408,30 @@ async def on_command_error(ctx, error):
 @bot.event
 async def on_ready():
     print(f"{bot.user} is now online!")
-    print(f"Loaded {len(user_names)} registered users")
+    print(f"Loaded {len(user_names)} authorized users")
+
+# ---------------- ADMIN COMMANDS ---------------- #
 
 @bot.command()
-async def register(ctx, *, full_name: str):
-    """Register your full name for DTR tracking. (One-time only)"""
-    uid = str(ctx.author.id)
+async def add_user(ctx, user_mention: discord.Member, *, full_name: str):
+    """[ADMIN ONLY] Add a new user to the DTR system."""
+    if not is_admin(ctx.author.id):
+        await ctx.send("This command is only available to admins.")
+        return
 
+    uid = str(user_mention.id)
+    
     if uid in user_names:
-        await ctx.send(
-            f"You are already registered as **{user_names[uid]}**.\n\n"
-            f"Only admins can change registered names. Please contact an admin if you need to update your name."
-        )
+        await ctx.send(f"{user_mention.mention} is already registered as **{user_names[uid]}**")
         return
-
-    valid, error_msg = validate_name(full_name)
-    if not valid:
-        await ctx.send(f"{error_msg}")
-        return
-
+    
     formatted_name = format_name_with_initials(full_name.strip())
-    user_names[uid] = formatted_name
+    user_names[uid] = full_name.strip()  # Store raw name, format on display
     save_users()
 
     await ctx.send(
-        f"Successfully registered:\n**{formatted_name}**\n\n"
-        f"You can now use DTR commands!"
+        f"Successfully added {user_mention.mention}:\n**{formatted_name}**\n\n"
+        f"They can now use DTR commands!"
     )
 
 @bot.command()
@@ -448,16 +441,16 @@ async def change_name(ctx, user_mention: discord.Member, *, new_name: str):
         await ctx.send("This command is only available to admins.")
         return
 
-    valid, error_msg = validate_name(new_name)
-    if not valid:
-        await ctx.send(f"{error_msg}")
-        return
-
     uid = str(user_mention.id)
-    old_name = user_names.get(uid, "Not registered")
-
+    
+    if uid not in user_names:
+        await ctx.send(f"{user_mention.mention} is not in the system. Use !add_user first.")
+        return
+    
+    old_name = format_name_with_initials(user_names[uid])
     formatted_name = format_name_with_initials(new_name.strip())
-    user_names[uid] = formatted_name
+    
+    user_names[uid] = new_name.strip()
     save_users()
 
     await ctx.send(
@@ -466,8 +459,8 @@ async def change_name(ctx, user_mention: discord.Member, *, new_name: str):
     )
 
 @bot.command()
-async def unregister(ctx, user_mention: discord.Member):
-    """[ADMIN ONLY] Remove a user's registration."""
+async def remove_user(ctx, user_mention: discord.Member):
+    """[ADMIN ONLY] Remove a user from the DTR system."""
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
         return
@@ -475,27 +468,30 @@ async def unregister(ctx, user_mention: discord.Member):
     uid = str(user_mention.id)
 
     if uid not in user_names:
-        await ctx.send(f"{user_mention.mention} is not registered.")
+        await ctx.send(f"{user_mention.mention} is not in the system.")
         return
 
-    removed_name = user_names.pop(uid)
+    removed_name = format_name_with_initials(user_names.pop(uid))
     save_users()
 
-    await ctx.send(f"Successfully unregistered: **{removed_name}** ({user_mention.mention})")
+    await ctx.send(f"Successfully removed: **{removed_name}** ({user_mention.mention})")
 
 @bot.command()
 async def list_users(ctx):
-    """[ADMIN ONLY] List all registered users."""
+    """[ADMIN ONLY] List all authorized users."""
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
         return
 
     if not user_names:
-        await ctx.send("No users registered yet.")
+        await ctx.send("No users in the system yet.")
         return
 
-    user_list = "\n".join([f"• {name} (ID: {uid})" for uid, name in user_names.items()])
-    await ctx.send(f"**Registered Users ({len(user_names)}):**\n\n{user_list}")
+    user_list = "\n".join([
+        f"• {format_name_with_initials(name)} (ID: {uid})" 
+        for uid, name in user_names.items()
+    ])
+    await ctx.send(f"**Authorized Users ({len(user_names)}):**\n\n{user_list}")
 
 # ---------------- Clock commands ---------------- #
 
@@ -504,7 +500,7 @@ async def am_in(ctx):
     """Clock in for the morning shift."""
     name = get_user_name(ctx)
     if not name:
-        await ctx.send("Please register first using !register FirstName MiddleName LastName")
+        await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
 
     record = get_full_record(name)
@@ -546,7 +542,7 @@ async def am_out(ctx):
     """Clock out for lunch break."""
     name = get_user_name(ctx)
     if not name:
-        await ctx.send("Please register first using !register FirstName MiddleName LastName")
+        await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
 
     record = get_full_record(name)
@@ -591,7 +587,7 @@ async def pm_in(ctx):
     """Clock in after lunch break."""
     name = get_user_name(ctx)
     if not name:
-        await ctx.send("Please register first using !register FirstName MiddleName LastName")
+        await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
 
     record = get_full_record(name)
@@ -635,7 +631,7 @@ async def pm_out(ctx):
     """Clock out at end of workday."""
     name = get_user_name(ctx)
     if not name:
-        await ctx.send("Please register first using !register FirstName MiddleName LastName")
+        await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
 
     record = get_full_record(name)
@@ -694,7 +690,7 @@ async def status(ctx):
     """Check your current DTR status for today."""
     name = get_user_name(ctx)
     if not name:
-        await ctx.send("Please register first using !register FirstName MiddleName LastName")
+        await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
 
     record = get_full_record(name)
@@ -729,9 +725,6 @@ async def help_dtr(ctx):
     help_text = """
 **DTR HAWKS Bot Commands**
 
-**Setup:**
-!register FirstName MiddleName LastName - Register your name (one-time only)
-
 **Daily Time Recording:**
 !am_in - Clock in (morning)
 !am_out - Clock out (lunch break)
@@ -743,9 +736,8 @@ async def help_dtr(ctx):
 !help_dtr - Show this help message
 
 **Notes:**
-• You must register before using DTR commands
+• Only authorized users can use DTR commands
 • Names are automatically formatted with middle initial (e.g., "Juan D. Cruz")
-• You can only register once - contact admin to change name
 • Follow the sequence: AM IN → AM OUT → PM IN → PM OUT
 • Late threshold: 10:00 AM
 • Required work hours: 8 hours
@@ -756,9 +748,10 @@ async def help_dtr(ctx):
     if is_user_admin:
         help_text += """
 **Admin Commands:**
+!add_user @user Full Name - Add a new user to the system
 !change_name @user NewName - Change a user's registered name
-!unregister @user - Remove user registration
-!list_users - List all registered users
+!remove_user @user - Remove user from system
+!list_users - List all authorized users
         """
 
     await ctx.send(help_text)
