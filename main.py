@@ -8,6 +8,7 @@ import json
 import os
 import random
 import threading
+import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ---------------- CONFIG ---------------- #
@@ -1017,6 +1018,51 @@ async def help_dtr(ctx):
         """
 
     await ctx.send(help_text)
+
+# ---------------- REMINDER ---------------- #
+
+REMINDER_THRESHOLD_MINUTES = 5  # Minutes before 8 hours
+
+async def reminder_loop():
+    await bot.wait_until_ready()  # ensure bot is fully online
+    while not bot.is_closed():
+        for uid, full_name in user_names.items():
+            user = bot.get_user(int(uid))
+            if not user:
+                continue  # skip if bot can't find user (offline or left server)
+
+            name = format_name_with_initials(full_name)
+            record = get_full_record(name)
+
+            # Only check if AM/PM times exist
+            if record["AM_IN"] and record["AM_OUT"]:
+                # If it's a half-day, PM_IN or PM_OUT will be "N/A"
+                if record["PM_IN"] == "N/A" or record["PM_OUT"] == "N/A":
+                    continue  # skip reminders for half-day users
+
+                # If PM_IN exists but PM_OUT is empty, calculate hours
+                if record["PM_IN"] and not record["PM_OUT"]:
+                    hours_worked = calculate_hours_worked(record)
+                    if hours_worked is None:
+                        # calculate based on current time
+                        am_in = parse_time_from_string(record["AM_IN"])
+                        am_out = parse_time_from_string(record["AM_OUT"])
+                        pm_in = parse_time_from_string(record["PM_IN"])
+                        if am_in and am_out and pm_in:
+                            total_seconds = (am_out - am_in).total_seconds() + (now() - pm_in).total_seconds()
+                            hours_worked = total_seconds / 3600
+
+                    if hours_worked and REQUIRED_HOURS - hours_worked <= REMINDER_THRESHOLD_MINUTES / 60:
+                        try:
+                            await user.send(
+                                f"Hi {name}! You're almost at {REQUIRED_HOURS} hours today. "
+                                "Don't forget to `!pm_out` to complete your DTR."
+                            )
+                        except Exception as e:
+                            print(f"Failed to send reminder to {name}: {e}")
+
+
+        await asyncio.sleep(60)  # check every 1 minute
 
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
