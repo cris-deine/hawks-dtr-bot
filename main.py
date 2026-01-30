@@ -662,7 +662,7 @@ async def pm_in(ctx):
     valid, error_msg = validate_time_sequence(test_record)
 
     if not valid:
-        await ctx.send(f"❌ {error_msg}")
+        await ctx.send(f"{error_msg}")
         return
 
     try:
