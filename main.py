@@ -20,7 +20,7 @@ PORT = int(os.getenv("PORT", 8080))  # Render provides PORT env variable
 
 TIMEZONE = pytz.timezone("Asia/Manila")
 AM_IN_CUTOFF = (10, 0)            # 10:00 AM - late threshold (hour, minute)
-REQUIRED_HOURS = 0.1                # Required work hours per day
+REQUIRED_HOURS = 8                # Required work hours per day
 MORNING_PERSON_CUTOFF = (7, 44)   # Anyone before this is a morning person
 # ---------------------------------------- #
 
@@ -622,61 +622,85 @@ async def manual_entry(ctx, user_mention: discord.Member, time_type: str, time_v
     )
     await ctx.send(f"{ctx.author.mention}, manual entry added successfully")
 
-
 @bot.command()
-async def half_day(ctx):
-    """Record a half-day (morning only). Auto-fills PM times as N/A.
-    
-    Use this when you only work in the morning (e.g., sick leave in afternoon).
-    You must have already clocked AM IN and AM OUT.
+async def half_day(ctx, half: str = "morning"):
+    """
+    Record a half-day (morning or afternoon).
+    Usage: !half_day morning OR !half_day afternoon
     """
     name = get_user_name(ctx)
     if not name:
         await ctx.send("You are not authorized to use the DTR system. Please contact an admin.")
         return
-    
+
+    half = half.lower()
+    if half not in ["morning", "afternoon"]:
+        await ctx.send("Invalid option. Use `morning` or `afternoon`.\nExample: `!half_day morning`")
+        return
+
     record = get_full_record(name)
-    
-    # Check if AM times are complete
-    if not record["AM_IN"]:
-        await ctx.send("You must clock AM IN first.")
-        return
-    
-    if not record["AM_OUT"]:
-        await ctx.send("You must clock AM OUT first.")
-        return
-    
-    # Check if already has PM entries
-    if record["PM_IN"] or record["PM_OUT"]:
-        await ctx.send("You already have PM entries. Cannot mark as half-day.")
-        return
-    
-    # Add N/A entries for PM times
     timestamp = timestamp_str()
-    try:
-        sheet.append_row([timestamp, name, "PM - Time In", "N/A"])
-        sheet.append_row([timestamp, name, "PM - Time Out", "N/A"])
-    except Exception as e:
-        await ctx.send(f"Failed to record half-day. Please contact an admin.")
-        print(f"Sheet error: {e}")
-        return
-    
-    # Calculate morning hours only
-    am_in = parse_time_from_string(record["AM_IN"])
-    am_out = parse_time_from_string(record["AM_OUT"])
-    
-    if am_in and am_out:
+
+    if half == "morning":
+        # Validate AM times
+        if not record["AM_IN"] or not record["AM_OUT"]:
+            await ctx.send("You must clock AM IN and AM OUT first for morning half-day.")
+            return
+        
+        # Check if PM entries already exist
+        if record["PM_IN"] or record["PM_OUT"]:
+            await ctx.send("PM entries already exist. Cannot mark as morning half-day.")
+            return
+        
+        # Fill PM as N/A
+        try:
+            sheet.append_row([timestamp, name, "PM - Time In", "N/A"])
+            sheet.append_row([timestamp, name, "PM - Time Out", "N/A"])
+        except Exception as e:
+            await ctx.send("Failed to record half-day. Contact an admin.")
+            print(f"Sheet error: {e}")
+            return
+        
+        am_in = parse_time_from_string(record["AM_IN"])
+        am_out = parse_time_from_string(record["AM_OUT"])
         morning_hours = (am_out - am_in).total_seconds() / 3600
         hours_display = format_hours_display(morning_hours)
-        
+
         message = format_record_message(name, record)
-        message += f"\n\n**Half-Day Recorded**"
+        message += f"\n\n**Half-Day Recorded (Morning)**"
         message += f"\nMorning Hours: {hours_display}"
         message += f"\nPM Times: N/A"
-    else:
+
+    else:  # afternoon half-day
+        # Validate PM times
+        if not record["PM_IN"] or not record["PM_OUT"]:
+            await ctx.send("You must clock PM IN and PM OUT first for afternoon half-day.")
+            return
+        
+        # Check if AM entries already exist
+        if record["AM_IN"] or record["AM_OUT"]:
+            await ctx.send("AM entries already exist. Cannot mark as afternoon half-day.")
+            return
+        
+        # Fill AM as N/A
+        try:
+            sheet.append_row([timestamp, name, "AM - Time In", "N/A"])
+            sheet.append_row([timestamp, name, "AM - Time Out", "N/A"])
+        except Exception as e:
+            await ctx.send("Failed to record half-day. Contact an admin.")
+            print(f"Sheet error: {e}")
+            return
+        
+        pm_in = parse_time_from_string(record["PM_IN"])
+        pm_out = parse_time_from_string(record["PM_OUT"])
+        afternoon_hours = (pm_out - pm_in).total_seconds() / 3600
+        hours_display = format_hours_display(afternoon_hours)
+
         message = format_record_message(name, record)
-        message += f"\n\n**Half-Day Recorded**\nPM Times: N/A"
-    
+        message += f"\n\n**Half-Day Recorded (Afternoon)**"
+        message += f"\nAfternoon Hours: {hours_display}"
+        message += f"\nAM Times: N/A"
+
     await ctx.send(message)
 
 @bot.command()
@@ -980,7 +1004,8 @@ async def help_dtr(ctx):
 !am_out - Clock out (lunch break)
 !pm_in - Clock in (after lunch)
 !pm_out - Clock out (end of day)
-!half_day - Record half-day (morning only)
+!half_day morning - Record half-day (morning only)
+!half_day afternoon - Record half-day (afternoon only)
 
 **Info:**
 !status - Check your DTR for today
@@ -1021,7 +1046,7 @@ async def help_dtr(ctx):
 
 # ---------------- REMINDER ---------------- #
 
-REMINDER_THRESHOLD_MINUTES = 1  # Minutes before 8 hours
+REMINDER_THRESHOLD_MINUTES = 5  # Minutes before 8 hours
 
 async def reminder_loop():
     await bot.wait_until_ready()  # ensure bot is fully online
