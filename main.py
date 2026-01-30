@@ -16,7 +16,7 @@ if not DISCORD_TOKEN:
 TIMEZONE = pytz.timezone("Asia/Manila")
 AM_IN_CUTOFF = (10, 0)            # 10:00 AM - late threshold (hour, minute)
 REQUIRED_HOURS = 8                # Required work hours per day
-ADMIN_IDS = [1429858548392792288] # Add Discord user IDs of admins here (ints)
+ADMIN_IDS = [1429858548392792288, 896989800786190337, 830704365438369792] # Add Discord user IDs of admins here (ints)
 MORNING_PERSON_CUTOFF = (7, 44)   # Anyone before this is a morning person
 # ---------------------------------------- #
 
