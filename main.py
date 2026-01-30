@@ -86,6 +86,12 @@ else:
 
 # ---------------- HELPERS ---------------- #
 
+def strip_leading_apostrophe(s: str) -> str:
+    """Remove any leading apostrophe from a string."""
+    if s.startswith("'"):
+        return s[1:]
+    return s
+
 def now():
     """Return timezone-aware 'now' in configured TIMEZONE."""
     return datetime.now(TIMEZONE)
@@ -604,7 +610,7 @@ async def manual_entry(ctx, user_mention: discord.Member, time_type: str, time_v
 
     timestamp = timestamp_str()
     try:
-        sheet.append_row([timestamp, name, valid_types[time_type], time_sheet])
+        sheet.append_row([timestamp, name, valid_types[time_type], strip_leading_apostrophe(time_sheet)])
     except Exception as e:
         await ctx.author.send(f"Failed to add entry. Please try again or contact support.")
         print(f"Sheet error: {e}")
@@ -799,7 +805,7 @@ async def am_in(ctx):
     late_status = is_late()
     
     try:
-        sheet.append_row([timestamp, name, "AM - Time In", time_sheet])
+        sheet.append_row([timestamp, name, "AM - Time In", strip_leading_apostrophe(time_sheet)])
     except Exception as e:
         await ctx.send(f"Failed to record AM IN. Please try again or contact admin.")
         print(f"Sheet error: {e}")
@@ -857,7 +863,7 @@ async def am_out(ctx):
         return
 
     try:
-        sheet.append_row([timestamp, name, "AM - Time Out", time_sheet])
+        sheet.append_row([timestamp, name, "AM - Time Out", strip_leading_apostrophe(time_sheet)])
     except Exception as e:
         await ctx.send(f"Failed to record AM OUT. Please try again or contact admin.")
         print(f"Sheet error: {e}")
@@ -901,7 +907,7 @@ async def pm_in(ctx):
         return
 
     try:
-        sheet.append_row([timestamp, name, "PM - Time In", time_sheet])
+        sheet.append_row([timestamp, name, "PM - Time In", strip_leading_apostrophe(time_sheet)])
     except Exception as e:
         await ctx.send(f"Failed to record PM IN. Please try again or contact admin.")
         print(f"Sheet error: {e}")
@@ -942,7 +948,7 @@ async def pm_out(ctx):
         await ctx.send(f"Time validation warning: {error_msg}")
 
     try:
-        sheet.append_row([timestamp, name, "PM - Time Out", time_sheet])
+        sheet.append_row([timestamp, name, "PM - Time Out", strip_leading_apostrophe(time_sheet)])
     except Exception as e:
         await ctx.send(f"Failed to record PM OUT. Please try again or contact admin.")
         print(f"Sheet error: {e}")
@@ -1046,10 +1052,6 @@ async def help_dtr(ctx):
 • Morning half-day = confirm AFTER AM OUT
 • Afternoon half-day = declare BEFORE PM IN
 • Late threshold: 10:00 AM
-• Required hours:
-  - Full day: 8 hours
-  - Half-day: 4 hours
-• Times are automatically validated
 """
 
     if is_user_admin:
@@ -1062,7 +1064,7 @@ async def help_dtr(ctx):
 !remove_user @user
 !list_users
 !view_dtr @user
-!manual_entry @user [am_in|am_out|pm_in|pm_out] [time]
+!manual_entry @user [am_in | am_out | pm_in | pm_out] [time]
 
 ━━━━━━━━━━━━━━━━━━
 **Manual Entry Examples**
