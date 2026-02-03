@@ -9,7 +9,7 @@ import os
 import random
 import threading
 import asyncio
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
 
 # ---------------- CONFIG ---------------- #
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -42,6 +42,20 @@ sheet = client.open("DTR HAWKS").sheet1
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+# --------------------------------
+
+# --- Flask App for Health Checks ---
+app = Flask(__name__)
+
+@app.route('/')
+@app.route('/health')
+def health_check():
+    """Health check endpoint for UptimeRobot and Render"""
+    return 'OK', 200
+
+def run_flask():
+    """Run Flask server in background thread"""
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 # --------------------------------
 
 # ---------------- USERS STORAGE ---------------- #
@@ -81,7 +95,7 @@ else:
     if not ADMINS_FILE.startswith("/etc/secrets"):
         with open(ADMINS_FILE, "w") as f:
             json.dump({"admin_ids": []}, f, indent=4)
-    print("WARNING: No admins configured! Please add admin IDs to admins.json")
+    print("⚠️  WARNING: No admins configured! Please add admin IDs to admins.json")
 # ----------------------------------------
 
 # ---------------- HELPERS ---------------- #
@@ -381,52 +395,8 @@ MESSAGES_FILE = "messages.json"
 if os.path.exists(MESSAGES_FILE):
     with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
         messages = json.load(f)
-
 else:
     messages = {"morning_person": [], "normal": [], "late": []}
-
-# ---------------- HTTP SERVER ---------------- #
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    """Simple HTTP handler for health checks - thread-safe by design"""
-    
-    def do_GET(self):
-        """Handle GET requests - only responds to health check endpoint"""
-        if self.path == '/' or self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'OK')
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def do_HEAD(self):
-        """Handle HEAD requests - UptimeRobot uses these for monitoring"""
-        if self.path == '/' or self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            # HEAD requests don't send a body
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        """Suppress default logging to avoid clutter"""
-        pass
-
-def run_http_server():
-    """Run HTTP server in background thread"""
-    try:
-        server = HTTPServer(('0.0.0.0', PORT), HealthCheckHandler)
-        print(f"HTTP server started successfully on port {PORT}")
-        print(f"Health check available at: http://0.0.0.0:{PORT}/health")
-        server.serve_forever()
-    except Exception as e:
-        print(f"Failed to start HTTP server: {e}")
-        import traceback
-        traceback.print_exc()
 
 # ---------------- ERROR HANDLER ---------------- #
 
@@ -468,8 +438,8 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} is now online!")
-    print(f"Loaded {len(user_names)} authorized users")
+    print(f"✅ {bot.user} is now online!")
+    print(f"✅ Loaded {len(user_names)} authorized users")
 
 # ---------------- ADMIN COMMANDS ---------------- #
 
@@ -1142,16 +1112,21 @@ async def reminder_loop():
 
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
-    print(f"Starting bot with PORT={PORT}")
+    print(f"Starting DTR HAWKS Bot...")
+    print(f"PORT: {PORT}")
+    print(f"Timezone: {TIMEZONE}")
     
-    # Start HTTP server in background thread
-    server_thread = threading.Thread(target=run_http_server, daemon=True)
-    server_thread.start()
+    # Start Flask server in background thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
-    # Give the server a moment to start
+    print(f"Flask server started on port {PORT}")
+    print(f"Health endpoint: http://0.0.0.0:{PORT}/health")
+    
+    # Give Flask a moment to start
     import time
     time.sleep(2)
     
-    print("Starting Discord bot...")
+    print(f"Starting Discord bot...")
     # Run Discord bot (blocking)
     bot.run(DISCORD_TOKEN)
