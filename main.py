@@ -7,16 +7,18 @@ import pytz
 import json
 import os
 import random
-import threading
 import asyncio
-from flask import Flask
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ---------------- CONFIG ---------------- #
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN not set")
+    raise ValueError("DISCORD_TOKEN not set in environment variables")
 
-PORT = int(os.getenv("PORT", 8080))  # Render provides PORT env variable
+GOOGLE_CREDS_PATH = os.getenv("GOOGLE_CREDS_PATH", "google_credentials.json")
 
 TIMEZONE = pytz.timezone("Asia/Manila")
 AM_IN_CUTOFF = (10, 0)            # 10:00 AM - late threshold (hour, minute)
@@ -30,10 +32,11 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Path to secret file mounted by Render
-cred_path = "/etc/secrets/google_credentials.json"
-creds = ServiceAccountCredentials.from_json_keyfile_name(cred_path, scope)
+# Use the credentials path from environment variable
+if not os.path.exists(GOOGLE_CREDS_PATH):
+    raise FileNotFoundError(f"Google credentials file not found at: {GOOGLE_CREDS_PATH}")
 
+creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDS_PATH, scope)
 client = gspread.authorize(creds)
 sheet = client.open("DTR HAWKS").sheet1
 # --------------------------------
@@ -44,58 +47,44 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 # --------------------------------
 
-# --- Flask App for Health Checks ---
-app = Flask(__name__)
-
-@app.route('/')
-@app.route('/health')
-def health_check():
-    """Health check endpoint for UptimeRobot and Render"""
-    return 'OK', 200
-
-def run_flask():
-    """Run Flask server in background thread"""
-    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
-# --------------------------------
-
 # ---------------- USERS STORAGE ---------------- #
-# Pre-loaded users - no registration needed!
-# Format: {"discord_id": "Full Name"}
+# File paths in same directory as bot.py
+USERS_FILE = os.getenv("USERS_FILE", "users.json")
+ADMINS_FILE = os.getenv("ADMINS_FILE", "admins.json")
+MESSAGES_FILE = os.getenv("MESSAGES_FILE", "messages.json")
 
-# Check if running on Render (production) or locally
-if os.path.exists("/etc/secrets"):
-    # Production - Render secret files
-    USERS_FILE = "/etc/secrets/users.json"
-    ADMINS_FILE = "/etc/secrets/admins.json"
-else:
-    # Local development
-    USERS_FILE = "users.json"
-    ADMINS_FILE = "admins.json"
-
+# Load users
 if os.path.exists(USERS_FILE):
     with open(USERS_FILE, "r") as f:
         user_names = json.load(f)
 else:
-    # Default empty users - add your team members here or use !add_user command
+    # Default empty users
     user_names = {}
-    # Save the default (only works locally, not on Render)
-    if not USERS_FILE.startswith("/etc/secrets"):
-        with open(USERS_FILE, "w") as f:
-            json.dump(user_names, f, indent=4)
+    with open(USERS_FILE, "w") as f:
+        json.dump(user_names, f, indent=4)
+    print(f"⚠️  Created empty {USERS_FILE}")
 
-# Load admin IDs from separate file for security
+# Load admin IDs
 if os.path.exists(ADMINS_FILE):
     with open(ADMINS_FILE, "r") as f:
         admin_data = json.load(f)
         ADMIN_IDS = admin_data.get("admin_ids", [])
 else:
-    # Default empty admins - YOU MUST ADD AT LEAST ONE ADMIN
+    # Default empty admins
     ADMIN_IDS = []
-    # Save the default (only works locally, not on Render)
-    if not ADMINS_FILE.startswith("/etc/secrets"):
-        with open(ADMINS_FILE, "w") as f:
-            json.dump({"admin_ids": []}, f, indent=4)
+    with open(ADMINS_FILE, "w") as f:
+        json.dump({"admin_ids": []}, f, indent=4)
     print("⚠️  WARNING: No admins configured! Please add admin IDs to admins.json")
+
+# Load custom messages
+if os.path.exists(MESSAGES_FILE):
+    with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
+        messages = json.load(f)
+else:
+    messages = {"morning_person": [], "normal": [], "late": []}
+    with open(MESSAGES_FILE, "w", encoding="utf-8") as f:
+        json.dump(messages, f, indent=4)
+    print(f"⚠️  Created empty {MESSAGES_FILE}")
 # ----------------------------------------
 
 # ---------------- HELPERS ---------------- #
@@ -388,16 +377,6 @@ def format_record_message(name, record):
         lines.append(f"PM OUT: {record['PM_OUT']}")
     return "\n".join(lines)
 
-# ---------------- MESSAGES ---------------- #
-
-MESSAGES_FILE = "messages.json"
-
-if os.path.exists(MESSAGES_FILE):
-    with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
-        messages = json.load(f)
-else:
-    messages = {"morning_person": [], "normal": [], "late": []}
-
 # ---------------- ERROR HANDLER ---------------- #
 
 @bot.event
@@ -440,6 +419,7 @@ async def on_command_error(ctx, error):
 async def on_ready():
     print(f"✅ {bot.user} is now online!")
     print(f"✅ Loaded {len(user_names)} authorized users")
+    print(f"✅ Configured {len(ADMIN_IDS)} admin(s)")
 
 # ---------------- ADMIN COMMANDS ---------------- #
 
@@ -1065,68 +1045,12 @@ async def help_dtr(ctx):
 """
     await ctx.send(help_text)
 
-# ---------------- REMINDER ---------------- #
-
-REMINDER_THRESHOLD_MINUTES = 5  # Minutes before 8 hours
-
-async def reminder_loop():
-    await bot.wait_until_ready()  # ensure bot is fully online
-    while not bot.is_closed():
-        for uid, full_name in user_names.items():
-            user = bot.get_user(int(uid))
-            if not user:
-                continue  # skip if bot can't find user (offline or left server)
-
-            name = format_name_with_initials(full_name)
-            record = get_full_record(name)
-
-            # Only check if AM/PM times exist
-            if record["AM_IN"] and record["AM_OUT"]:
-                # If it's a half-day, PM_IN or PM_OUT will be "N/A"
-                if record["PM_IN"] == "N/A" or record["PM_OUT"] == "N/A":
-                    continue  # skip reminders for half-day users
-
-                # If PM_IN exists but PM_OUT is empty, calculate hours
-                if record["PM_IN"] and not record["PM_OUT"]:
-                    hours_worked = calculate_hours_worked(record)
-                    if hours_worked is None:
-                        # calculate based on current time
-                        am_in = parse_time_from_string(record["AM_IN"])
-                        am_out = parse_time_from_string(record["AM_OUT"])
-                        pm_in = parse_time_from_string(record["PM_IN"])
-                        if am_in and am_out and pm_in:
-                            total_seconds = (am_out - am_in).total_seconds() + (now() - pm_in).total_seconds()
-                            hours_worked = total_seconds / 3600
-
-                    if hours_worked and REQUIRED_HOURS - hours_worked <= REMINDER_THRESHOLD_MINUTES / 60:
-                        try:
-                            await user.send(
-                                f"Hi {name}! You're almost at {REQUIRED_HOURS} hours today. "
-                                "Don't forget to `!pm_out` to complete your DTR."
-                            )
-                        except Exception as e:
-                            print(f"Failed to send reminder to {name}: {e}")
-
-
-        await asyncio.sleep(60)  # check every 1 minute
-
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
     print(f"Starting DTR HAWKS Bot...")
-    print(f"PORT: {PORT}")
     print(f"Timezone: {TIMEZONE}")
-    
-    # Start Flask server in background thread
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    print(f"Flask server started on port {PORT}")
-    print(f"Health endpoint: http://0.0.0.0:{PORT}/health")
-    
-    # Give Flask a moment to start
-    import time
-    time.sleep(2)
-    
+    print(f"Google Credentials: {GOOGLE_CREDS_PATH}")
     print(f"Starting Discord bot...")
-    # Run Discord bot (blocking)
+    
+    # Run Discord bot
     bot.run(DISCORD_TOKEN)
