@@ -331,7 +331,7 @@ def get_full_record(name):
 
     for rec in today_records:
         time_clock = rec.get("Time Clock", "")
-        input_time_sheet = rec.get("Input Time", "")  # sheet format expected H:MM:00 AM/PM
+        input_time_sheet = strip_leading_apostrophe(rec.get("Input Time", "")) # sheet format expected H:MM:00 AM/PM
 
         # Convert sheet time to Discord-friendly format (H:MM AM/PM)
         input_time_discord = ""

@@ -56,3 +56,5 @@ google_credentials.json
 admins.json
 users.json
 messages.json
+test.py
+__init__.py
