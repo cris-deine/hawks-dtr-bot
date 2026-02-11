@@ -239,7 +239,9 @@ def validate_time_sequence(record):
 # --- Hours calculation ---
 def calculate_hours_worked(record):
     """
-    Calculate total worked hours and exclude lunch break (12:00 PM - 1:00 PM).
+    Calculate total worked hours and exclude lunch break (12:00 PM - 1:00 PM)
+    using boss formula:
+    Net = (T_out - T_in) - max(0, min(T_out, 13:00) - max(T_in, 12:00))
     """
     try:
         am_in = parse_time_from_string(record.get("AM_IN", ""))
@@ -250,7 +252,7 @@ def calculate_hours_worked(record):
         if not all([am_in, am_out, pm_in, pm_out]):
             return None
 
-        # Basic hours
+        # ---- BASIC HOURS (unchanged) ----
         morning_hours = (am_out - am_in).total_seconds()
         afternoon_hours = (pm_out - pm_in).total_seconds()
 
@@ -259,21 +261,21 @@ def calculate_hours_worked(record):
 
         total_seconds = morning_hours + afternoon_hours
 
-        # ---- LUNCH BREAK FIX ----
-        lunch_start = datetime.combine(now().date(), datetime.strptime("12:00 PM", "%I:%M %p").time())
-        lunch_end   = datetime.combine(now().date(), datetime.strptime("1:00 PM", "%I:%M %p").time())
+        # ---- BOSS LUNCH FORMULA FIX ----
+        lunch_start = datetime.combine(am_in.date(), datetime.strptime("12:00 PM", "%I:%M %p").time())
+        lunch_end   = datetime.combine(am_in.date(), datetime.strptime("1:00 PM", "%I:%M %p").time())
 
-        # Find overlap with lunch
-        work_start = am_in
-        work_end = pm_out
+        # T_in = earliest, T_out = latest
+        T_in = min(am_in, am_out, pm_in, pm_out)
+        T_out = max(am_in, am_out, pm_in, pm_out)
 
-        overlap_start = max(work_start, lunch_start)
-        overlap_end = min(work_end, lunch_end)
+        overlap_start = max(T_in, lunch_start)
+        overlap_end = min(T_out, lunch_end)
 
-        if overlap_start < overlap_end:
-            lunch_overlap = (overlap_end - overlap_start).total_seconds()
-            total_seconds -= lunch_overlap
-        # -------------------------
+        lunch_overlap = max(0, (overlap_end - overlap_start).total_seconds())
+
+        total_seconds -= lunch_overlap
+        # -------------------------------
 
         total_hours = total_seconds / 3600
         return round(total_hours, 2)
@@ -281,6 +283,7 @@ def calculate_hours_worked(record):
     except Exception as e:
         print(f"Hour calculation error: {e}")
         return None
+
 
 def format_hours_display(hours):
     """Format decimal hours (e.g., 7.5) as '7h 30m'."""
