@@ -434,42 +434,6 @@ def format_record_message(name, record):
         lines.append(f"PM OUT: {record['PM_OUT']}")
     return "\n".join(lines)
 
-# ---------------- ERROR HANDLER ---------------- #
-
-@bot.event
-async def on_command_error(ctx, error):
-    """Basic command error handling with user-friendly messages."""
-    if isinstance(error, commands.MissingRequiredArgument):
-        # User-friendly messages based on command
-        command = ctx.command.name if ctx.command else "command"
-        
-        if command == "add_user":
-            await ctx.send("❌ **Usage:** `!add_user @username Full Name`\n\nExample: `!add_user @john Juan Dela Cruz`")
-        elif command == "change_name":
-            await ctx.send("❌ **Usage:** `!change_name @username New Full Name`\n\nExample: `!change_name @john Juan Miguel Cruz`")
-        elif command == "remove_user":
-            await ctx.send("❌ **Usage:** `!remove_user @username`\n\nExample: `!remove_user @john`")
-        elif command == "manual_entry":
-            await ctx.send(
-                "❌ **Usage:** `!manual_entry @username [am_in|am_out|pm_in|pm_out] [time]`\n\n"
-                "**Examples:**\n"
-                "`!manual_entry @john am_in 8:30 AM`\n"
-                "`!manual_entry @maria pm_out 5:00 PM`\n"
-                "`!manual_entry @pedro am_out 12:00 PM`"
-            )
-        elif command == "view_dtr":
-            await ctx.send("❌ **Usage:** `!view_dtr @username`\n\nExample: `!view_dtr @john`")
-        else:
-            await ctx.send(f"❌ Oops! This command needs more information.\n\nTry `!help_dtr` to see how to use it.")
-    
-    elif isinstance(error, commands.CommandNotFound):
-        # ignore unknown commands silently
-        pass
-    
-    else:
-        await ctx.send(f"❌ Something went wrong. Please try again or contact an admin.")
-        print(f"Error: {error}")
-
 # ---------------- COMMANDS ---------------- #
 
 @bot.event
@@ -481,88 +445,89 @@ async def on_ready():
 # ---------------- ADMIN COMMANDS ---------------- #
 
 @bot.command()
-async def add_user(ctx, user_mention: discord.Member, *, full_name: str):
+async def add_user(ctx, user_mention: discord.Member = None, *, full_name: str = None):
     """[ADMIN ONLY] Add a new user to the DTR system."""
+
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
         return
 
-    uid = str(user_mention.id)
-    
-    if uid in user_names:
-        await ctx.author.send(f"{user_mention.mention} is already registered as **{user_names[uid]}**")
+    if not user_mention or not full_name:
+        await ctx.send("❌ Usage: `!add_user @username Full Name`")
         return
-    
-    formatted_name = format_name_with_initials(full_name.strip())
-    user_names[uid] = full_name.strip()
-    save_users()
 
-    # Send full info via DM
     try:
-        await ctx.author.send(
-            f"Successfully added {user_mention.mention}:\n**{formatted_name}**\n"
-            f"They can now use DTR commands!"
-        )
-    except discord.Forbidden:
-        pass
-    
-    # Optional small confirmation in channel
-    await ctx.send(f"{ctx.author.mention}, user added successfully: **{formatted_name}**")
+        uid = str(user_mention.id)
+
+        if uid in user_names:
+            await ctx.send(f"{user_mention.mention} is already registered.")
+            return
+
+        user_names[uid] = full_name.strip()
+        save_users()
+
+        formatted_name = format_name_with_initials(full_name.strip())
+        await ctx.send(f"✅ User added successfully: **{formatted_name}**")
+
+    except Exception as e:
+        print(f"Add user error: {e}")
+        await ctx.send("❌ Failed to add user.")
 
 @bot.command()
-async def change_name(ctx, user_mention: discord.Member, *, new_name: str):
-    """[ADMIN ONLY] Change a user's registered name."""
+async def change_name(ctx, user_mention: discord.Member = None, *, new_name: str = None):
+
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
         return
 
-    uid = str(user_mention.id)
-    
-    if uid not in user_names:
-        await ctx.author.send(f"{user_mention.mention} is not in the system. Use !add_user first.")
+    if not user_mention or not new_name:
+        await ctx.send("Usage: `!change_name @username New Full Name`")
         return
-    
-    old_name = format_name_with_initials(user_names[uid])
-    formatted_name = format_name_with_initials(new_name.strip())
-    
-    user_names[uid] = new_name.strip()
-    save_users()
 
-    # DM confirmation
     try:
-        await ctx.author.send(
-            f"Successfully updated name for {user_mention.mention}:\n"
-            f"**{old_name}** → **{formatted_name}**"
-        )
-    except discord.Forbidden:
-        pass
-    
-    await ctx.send(f"{ctx.author.mention}, name updated successfully: **{formatted_name}**")
+        uid = str(user_mention.id)
+
+        if uid not in user_names:
+            await ctx.send("User not found.")
+            return
+
+        user_names[uid] = new_name.strip()
+        save_users()
+
+        formatted_name = format_name_with_initials(new_name.strip())
+        await ctx.send(f"Name updated to: **{formatted_name}**")
+
+    except Exception as e:
+        print(f"Change name error: {e}")
+        await ctx.send("Failed to update name.")
 
 @bot.command()
-async def remove_user(ctx, user_mention: discord.Member):
+async def remove_user(ctx, user_mention: discord.Member = None):
     """[ADMIN ONLY] Remove a user from the DTR system."""
+
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
         return
 
-    uid = str(user_mention.id)
-
-    if uid not in user_names:
-        await ctx.author.send(f"{user_mention.mention} is not in the system.")
+    if not user_mention:
+        await ctx.send("Usage: `!remove_user @username`")
         return
 
-    removed_name = format_name_with_initials(user_names.pop(uid))
-    save_users()
-
-    # DM confirmation
     try:
-        await ctx.author.send(f"Successfully removed: **{removed_name}** ({user_mention.mention})")
-    except discord.Forbidden:
-        # User has DMs disabled, just notify in channel
-        pass
-    
-    await ctx.send(f"{ctx.author.mention}, user removed successfully: **{removed_name}**")
+        uid = str(user_mention.id)
+
+        if uid not in user_names:
+            await ctx.send("User not found.")
+            return
+
+        removed_name = format_name_with_initials(user_names.pop(uid))
+        save_users()
+
+        await ctx.send(f"User removed successfully: **{removed_name}**")
+
+    except Exception as e:
+        print(f"Remove user error: {e}")
+        await ctx.send("Failed to remove user.")
 
 @bot.command()
 async def list_users(ctx):
