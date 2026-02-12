@@ -239,9 +239,10 @@ def validate_time_sequence(record):
 # --- Hours calculation ---
 def calculate_hours_worked(record):
     """
-    Calculate total worked hours and exclude lunch break (12:00 PM - 1:00 PM)
-    using boss formula:
-    Net = (T_out - T_in) - max(0, min(T_out, 13:00) - max(T_in, 12:00))
+    Calculate total worked hours using boss formula:
+    Total time from AM IN to PM OUT, minus 1 hour mandatory lunch break.
+    
+    Example: 7:44 AM to 5:19 PM = 9h 35m - 1h = 8h 35m
     """
     try:
         am_in = parse_time_from_string(record.get("AM_IN", ""))
@@ -252,33 +253,21 @@ def calculate_hours_worked(record):
         if not all([am_in, am_out, pm_in, pm_out]):
             return None
 
-        # ---- BASIC HOURS (unchanged) ----
-        morning_hours = (am_out - am_in).total_seconds()
-        afternoon_hours = (pm_out - pm_in).total_seconds()
+        # Calculate total span from AM IN to PM OUT
+        total_seconds = (pm_out - am_in).total_seconds()
 
-        if morning_hours < 0 or afternoon_hours < 0:
+        if total_seconds < 0:
             return None
 
-        total_seconds = morning_hours + afternoon_hours
-
-        # ---- BOSS LUNCH FORMULA FIX ----
-        lunch_start = datetime.combine(am_in.date(), datetime.strptime("12:00 PM", "%I:%M %p").time())
-        lunch_end   = datetime.combine(am_in.date(), datetime.strptime("1:00 PM", "%I:%M %p").time())
-
-        # T_in = earliest, T_out = latest
-        T_in = min(am_in, am_out, pm_in, pm_out)
-        T_out = max(am_in, am_out, pm_in, pm_out)
-
-        overlap_start = max(T_in, lunch_start)
-        overlap_end = min(T_out, lunch_end)
-
-        lunch_overlap = max(0, (overlap_end - overlap_start).total_seconds())
-
-        total_seconds -= lunch_overlap
-        # -------------------------------
-
+        # Subtract mandatory 1-hour lunch break (3600 seconds)
+        total_seconds -= 3600
+        
         total_hours = total_seconds / 3600
         return round(total_hours, 2)
+
+    except Exception as e:
+        print(f"Hour calculation error: {e}")
+        return None
 
     except Exception as e:
         print(f"Hour calculation error: {e}")
