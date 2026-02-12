@@ -467,11 +467,11 @@ async def add_user(ctx, user_mention: discord.Member = None, *, full_name: str =
         save_users()
 
         formatted_name = format_name_with_initials(full_name.strip())
-        await ctx.send(f"✅ User added successfully: **{formatted_name}**")
+        await ctx.send(f"User added successfully: **{formatted_name}**")
 
     except Exception as e:
-        print(f"Add user error: {e}")
-        await ctx.send("❌ Failed to add user.")
+    print("Add user error:", repr(e))
+    await ctx.send(f"Failed to add user.\nError: `{e}`")
 
 @bot.command()
 async def change_name(ctx, user_mention: discord.Member = None, *, new_name: str = None):
