@@ -498,12 +498,16 @@ async def add_user(ctx, user_mention: discord.Member, *, full_name: str):
     save_users()
 
     # Send full info via DM
-    await ctx.author.send(
-        f"Successfully added {user_mention.mention}:\n**{formatted_name}**\n"
-        f"They can now use DTR commands!"
-    )
+    try:
+        await ctx.author.send(
+            f"Successfully added {user_mention.mention}:\n**{formatted_name}**\n"
+            f"They can now use DTR commands!"
+        )
+    except discord.Forbidden:
+        pass
+    
     # Optional small confirmation in channel
-    await ctx.send(f"{ctx.author.mention}, user added successfully")
+    await ctx.send(f"{ctx.author.mention}, user added successfully: **{formatted_name}**")
 
 @bot.command()
 async def change_name(ctx, user_mention: discord.Member, *, new_name: str):
@@ -525,11 +529,15 @@ async def change_name(ctx, user_mention: discord.Member, *, new_name: str):
     save_users()
 
     # DM confirmation
-    await ctx.author.send(
-        f"Successfully updated name for {user_mention.mention}:\n"
-        f"**{old_name}** → **{formatted_name}**"
-    )
-    await ctx.send(f"{ctx.author.mention}, name updated successfully")
+    try:
+        await ctx.author.send(
+            f"Successfully updated name for {user_mention.mention}:\n"
+            f"**{old_name}** → **{formatted_name}**"
+        )
+    except discord.Forbidden:
+        pass
+    
+    await ctx.send(f"{ctx.author.mention}, name updated successfully: **{formatted_name}**")
 
 @bot.command()
 async def remove_user(ctx, user_mention: discord.Member):
@@ -548,8 +556,13 @@ async def remove_user(ctx, user_mention: discord.Member):
     save_users()
 
     # DM confirmation
-    await ctx.author.send(f"Successfully removed: **{removed_name}** ({user_mention.mention})")
-    await ctx.send(f"{ctx.author.mention}, user removed successfully")
+    try:
+        await ctx.author.send(f"Successfully removed: **{removed_name}** ({user_mention.mention})")
+    except discord.Forbidden:
+        # User has DMs disabled, just notify in channel
+        pass
+    
+    await ctx.send(f"{ctx.author.mention}, user removed successfully: **{removed_name}**")
 
 @bot.command()
 async def list_users(ctx):
@@ -576,14 +589,21 @@ async def list_users(ctx):
     admin_count = sum(1 for uid in user_names.keys() if int(uid) in ADMIN_IDS)
     
     # Send as DM
-    await ctx.author.send(
-        f"**Authorized Users ({len(user_names)}):**\n"
-        f"Admins: {admin_count} | Regular Users: {len(user_names) - admin_count}\n\n"
-        f"{users_display}"
-    )
-
-    # Optional: confirm in channel that the message was sent
-    await ctx.send(f"{ctx.author.mention}, I sent you the user list in DM")
+    try:
+        await ctx.author.send(
+            f"**Authorized Users ({len(user_names)}):**\n"
+            f"Admins: {admin_count} | Regular Users: {len(user_names) - admin_count}\n\n"
+            f"{users_display}"
+        )
+        # Optional: confirm in channel that the message was sent
+        await ctx.send(f"{ctx.author.mention}, I sent you the user list in DM")
+    except discord.Forbidden:
+        # If DM fails, send in channel instead
+        await ctx.send(
+            f"{ctx.author.mention}\n**Authorized Users ({len(user_names)}):**\n"
+            f"Admins: {admin_count} | Regular Users: {len(user_names) - admin_count}\n\n"
+            f"{users_display}"
+        )
 
 @bot.command()
 async def manual_entry(ctx, user_mention: discord.Member, time_type: str, time_value: str):
