@@ -239,10 +239,36 @@ def validate_time_sequence(record):
 # --- Hours calculation ---
 def calculate_hours_worked(record):
     """
-    Calculate total worked hours using boss formula:
-    Total time from AM IN to PM OUT, minus 1 hour mandatory lunch break.
+    Calculate total worked hours with lunch overlap deduction.
     
-    Example: 7:44 AM to 5:19 PM = 9h 35m - 1h = 8h 35m
+    Formula:
+    Net Time = (AM_OUT - AM_IN) + (PM_OUT - PM_IN) - Lunch_overlap
+    
+    Where Lunch_overlap is the time actually worked during 12:00 PM - 1:00 PM.
+    
+    This handles all edge cases:
+    - Working through lunch: Deducts the overlapping work time
+    - Normal lunch break: Deducts minimal or no overlap
+    - Late start/early end: Doesn't over-deduct
+    
+    Examples:
+    
+    1. Normal case (work 7:44 AM - 12:01 PM, 12:59 PM - 5:19 PM):
+       Work time: 4h 17m + 4h 20m = 8h 37m
+       AM overlap with 12-1: 12:00 PM - 12:01 PM = 1 minute (in AM period)
+       PM overlap with 12-1: 12:59 PM - 1:00 PM = 1 minute (in PM period)
+       Total overlap: 2 minutes
+       Result: 8h 37m - 2m = 8h 35m ✅
+    
+    2. Long lunch (work 8:00 AM - 11:00 AM, 2:00 PM - 5:00 PM):
+       Work time: 3h + 3h = 6h
+       AM overlap: 0 (ended at 11 AM, before 12 PM)
+       PM overlap: 0 (started at 2 PM, after 1 PM)
+       Result: 6h - 0 = 6h ✅
+    
+    3. Working through lunch (work 8:00 AM - 4:00 PM straight):
+       This shouldn't happen with AM/PM system, but if it did:
+       Would deduct the full hour from 12-1 PM
     """
     try:
         am_in = parse_time_from_string(record.get("AM_IN", ""))
@@ -250,24 +276,45 @@ def calculate_hours_worked(record):
         pm_in = parse_time_from_string(record.get("PM_IN", ""))
         pm_out = parse_time_from_string(record.get("PM_OUT", ""))
 
+        # Check for N/A entries (half-day scenarios)
+        if (record.get("AM_IN") == "N/A" or record.get("AM_OUT") == "N/A" or 
+            record.get("PM_IN") == "N/A" or record.get("PM_OUT") == "N/A"):
+            return None
+
         if not all([am_in, am_out, pm_in, pm_out]):
             return None
 
-        # Calculate total span from AM IN to PM OUT
-        total_seconds = (pm_out - am_in).total_seconds()
-
-        if total_seconds < 0:
-            return None
-
-        # Subtract mandatory 1-hour lunch break (3600 seconds)
-        total_seconds -= 3600
+        # Calculate actual work time (morning + afternoon)
+        morning_seconds = (am_out - am_in).total_seconds()
+        afternoon_seconds = (pm_out - pm_in).total_seconds()
         
-        total_hours = total_seconds / 3600
-        return round(total_hours, 2)
+        if morning_seconds < 0 or afternoon_seconds < 0:
+            return None
+        
+        total_work_seconds = morning_seconds + afternoon_seconds
 
-    except Exception as e:
-        print(f"Hour calculation error: {e}")
-        return None
+        # Define lunch window: 12:00 PM - 1:00 PM
+        lunch_start = datetime.combine(am_in.date(), datetime.strptime("12:00 PM", "%I:%M %p").time())
+        lunch_end = datetime.combine(am_in.date(), datetime.strptime("1:00 PM", "%I:%M %p").time())
+
+        # Calculate AM period overlap with lunch window
+        am_overlap_start = max(am_in, lunch_start)
+        am_overlap_end = min(am_out, lunch_end)
+        am_overlap_seconds = max(0, (am_overlap_end - am_overlap_start).total_seconds())
+
+        # Calculate PM period overlap with lunch window
+        pm_overlap_start = max(pm_in, lunch_start)
+        pm_overlap_end = min(pm_out, lunch_end)
+        pm_overlap_seconds = max(0, (pm_overlap_end - pm_overlap_start).total_seconds())
+
+        # Total lunch overlap (time worked during 12-1 PM)
+        total_lunch_overlap = am_overlap_seconds + pm_overlap_seconds
+
+        # Net time = work time - lunch overlap
+        net_seconds = total_work_seconds - total_lunch_overlap
+        
+        total_hours = net_seconds / 3600
+        return round(total_hours, 2)
 
     except Exception as e:
         print(f"Hour calculation error: {e}")
