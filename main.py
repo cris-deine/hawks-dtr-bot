@@ -456,25 +456,37 @@ async def add_user(ctx, user_mention: discord.Member = None, *, full_name: str =
         await ctx.send("❌ Usage: `!add_user @username Full Name`")
         return
 
+    uid = str(user_mention.id)
+
+    if uid in user_names:
+        await ctx.send(f"{user_mention.mention} is already registered.")
+        return
+
+    # Save user to database
     try:
-        uid = str(user_mention.id)
-
-        if uid in user_names:
-            await ctx.send(f"{user_mention.mention} is already registered.")
-            return
-
         user_names[uid] = full_name.strip()
         save_users()
-
         formatted_name = format_name_with_initials(full_name.strip())
-        await ctx.send(f"User added successfully: **{formatted_name}**")
-
+        print(f"User added: {formatted_name} (ID: {uid})")
     except Exception as e:
-        print(f"Add user error: {e}")
-        await ctx.send("❌ Failed to add user.")
+        print(f"Database error adding user: {e}")
+        await ctx.send("Failed to save user to database. Please try again.")
+        return
+
+    # Send confirmation to Discord
+    try:
+        await ctx.send(f"User added successfully: **{formatted_name}**")
+    except Exception as e:
+        print(f"Discord message error (user was added): {e}")
+        # User was already added, so try a simpler message
+        try:
+            await ctx.send(f"User added: {formatted_name}")
+        except:
+            print(f"Could not send confirmation, but user was added successfully")
 
 @bot.command()
 async def change_name(ctx, user_mention: discord.Member = None, *, new_name: str = None):
+    """[ADMIN ONLY] Change a user's name in the DTR system."""
 
     if not is_admin(ctx.author.id):
         await ctx.send("This command is only available to admins.")
@@ -484,22 +496,34 @@ async def change_name(ctx, user_mention: discord.Member = None, *, new_name: str
         await ctx.send("Usage: `!change_name @username New Full Name`")
         return
 
+    uid = str(user_mention.id)
+
+    if uid not in user_names:
+        await ctx.send("User not found in the system.")
+        return
+
+    # Update user name in database
     try:
-        uid = str(user_mention.id)
-
-        if uid not in user_names:
-            await ctx.send("User not found.")
-            return
-
+        old_name = format_name_with_initials(user_names[uid])
         user_names[uid] = new_name.strip()
         save_users()
-
         formatted_name = format_name_with_initials(new_name.strip())
-        await ctx.send(f"Name updated to: **{formatted_name}**")
-
+        print(f"Name changed: {old_name} → {formatted_name} (ID: {uid})")
     except Exception as e:
-        print(f"Change name error: {e}")
-        await ctx.send("Failed to update name.")
+        print(f"Database error changing name: {e}")
+        await ctx.send("Failed to update name in database. Please try again.")
+        return
+
+    # Send confirmation to Discord
+    try:
+        await ctx.send(f"Name updated to: **{formatted_name}**")
+    except Exception as e:
+        print(f"Discord message error (name was updated): {e}")
+        # Name was already updated, so try a simpler message
+        try:
+            await ctx.send(f"Name updated: {formatted_name}")
+        except:
+            print(f"Could not send confirmation, but name was updated successfully")
 
 @bot.command()
 async def remove_user(ctx, user_mention: discord.Member = None):
@@ -510,24 +534,36 @@ async def remove_user(ctx, user_mention: discord.Member = None):
         return
 
     if not user_mention:
-        await ctx.send("Usage: `!remove_user @username`")
+        await ctx.send("❌ Usage: `!remove_user @username`")
         return
 
+    uid = str(user_mention.id)
+
+    if uid not in user_names:
+        await ctx.send("User not found in the system.")
+        return
+
+    # Remove user from database
     try:
-        uid = str(user_mention.id)
-
-        if uid not in user_names:
-            await ctx.send("User not found.")
-            return
-
-        removed_name = format_name_with_initials(user_names.pop(uid))
+        removed_name = format_name_with_initials(user_names[uid])
+        user_names.pop(uid)
         save_users()
-
-        await ctx.send(f"User removed successfully: **{removed_name}**")
-
+        print(f"User removed: {removed_name} (ID: {uid})")
     except Exception as e:
-        print(f"Remove user error: {e}")
-        await ctx.send("Failed to remove user.")
+        print(f"Database error removing user: {e}")
+        await ctx.send("Failed to remove user from database. Please try again.")
+        return
+
+    # Send confirmation to Discord
+    try:
+        await ctx.send(f"User removed successfully: **{removed_name}**")
+    except Exception as e:
+        print(f"Discord message error (user was removed): {e}")
+        # User was already removed, so try a simpler message
+        try:
+            await ctx.send(f"User removed: {removed_name}")
+        except:
+            print(f"Could not send confirmation, but user was removed successfully")
 
 @bot.command()
 async def list_users(ctx):
